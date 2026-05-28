@@ -261,7 +261,7 @@ def make_final_video(
     audio_concat = ffmpeg.concat(*audio_clips, a=1, v=0)
     ffmpeg.output(
         audio_concat, f"assets/temp/{reddit_id}/audio.mp3", **{"b:a": "192k"}
-    ).overwrite_output().run(quiet=True)
+    ).overwrite_output().run(quiet=False)
 
     console.log(f"[bold green] Video Will Be: {length} Seconds Long")
 
