@@ -358,26 +358,23 @@ def make_final_video(
     idx = extract_id(reddit_obj)
     title_thumb = reddit_obj["thread_title"]
 
-    filename = f"{name_normalize(title)[:251]}"
-    subreddit = settings.config["reddit"]["thread"]["subreddit"]
+    filename = f"{name_normalize(title)[:100]}"
+    subreddit = reddit_obj.get("thread_subreddit", settings.config["reddit"]["thread"]["subreddit"])
+    sentiment = settings.config["settings"]["background"].get("background_video", "unknown")
 
-    if not exists(f"./results/{subreddit}"):
-        print_substep("The 'results' folder could not be found so it was automatically created.")
-        os.makedirs(f"./results/{subreddit}")
+    # Per-video folder: results/{subreddit}/{thread_id}_{sentiment}/
+    video_folder = f"./results/{subreddit}/{idx}_{sentiment}"
+    os.makedirs(video_folder, exist_ok=True)
 
-    if not exists(f"./results/{subreddit}/OnlyTTS") and allowOnlyTTSFolder:
-        print_substep("The 'OnlyTTS' folder could not be found so it was automatically created.")
-        os.makedirs(f"./results/{subreddit}/OnlyTTS")
+    if allowOnlyTTSFolder:
+        os.makedirs(f"{video_folder}/OnlyTTS", exist_ok=True)
 
     # create a thumbnail for the video
     settingsbackground = settings.config["settings"]["background"]
 
     if settingsbackground["background_thumbnail"]:
-        if not exists(f"./results/{subreddit}/thumbnails"):
-            print_substep(
-                "The 'results/thumbnails' folder could not be found so it was automatically created."
-            )
-            os.makedirs(f"./results/{subreddit}/thumbnails")
+        if not exists(f"{video_folder}"):
+            os.makedirs(f"{video_folder}", exist_ok=True)
         # get the first file with the .png extension from assets/backgrounds and use it as a background for the thumbnail
         first_image = next(
             (file for file in os.listdir("assets/backgrounds") if file.endswith(".png")),
@@ -401,7 +398,7 @@ def make_final_video(
                 height,
                 title_thumb,
             )
-            thumbnailSave.save(f"./assets/temp/{reddit_id}/thumbnail.png")
+            thumbnailSave.save(f"{video_folder}/thumbnail.png")
             print_substep(f"Thumbnail - Building Thumbnail in assets/temp/{reddit_id}/thumbnail.png")
 
     text = f"Background by {background_config['video'][2]}"
@@ -425,12 +422,9 @@ def make_final_video(
         old_percentage = pbar.n
         pbar.update(status - old_percentage)
 
-    defaultPath = f"results/{subreddit}"
+    defaultPath = video_folder
     with ProgressFfmpeg(length, on_update_example) as progress:
-        path = defaultPath + f"/{filename}"
-        path = (
-            path[:251] + ".mp4"
-        )  # Prevent a error by limiting the path length, do not change this.
+        path = f"{video_folder}/video.mp4"
         try:
             ffmpeg.output(
                 background_clip,
@@ -455,10 +449,8 @@ def make_final_video(
     old_percentage = pbar.n
     pbar.update(100 - old_percentage)
     if allowOnlyTTSFolder:
-        path = defaultPath + f"/OnlyTTS/{filename}"
-        path = (
-            path[:251] + ".mp4"
-        )  # Prevent a error by limiting the path length, do not change this.
+        path = f"{video_folder}/OnlyTTS/video.mp4"
+        # Prevent a error by limiting the path length, do not change this.
         print_step("Rendering the Only TTS Video 🎥")
         with ProgressFfmpeg(length, on_update_example) as progress:
             try:
@@ -486,7 +478,7 @@ def make_final_video(
         old_percentage = pbar.n
         pbar.update(100 - old_percentage)
     pbar.close()
-    save_data(subreddit, filename + ".mp4", title, idx, background_config["video"][2])
+    save_data(subreddit, f"{idx}_{sentiment}/video.mp4", title, idx, background_config["video"][2])
     print_step("Removing temporary files 🗑")
     cleanups = cleanup(reddit_id)
     print_substep(f"Removed {cleanups} temporary files 🗑")

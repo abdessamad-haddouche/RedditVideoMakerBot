@@ -49,6 +49,15 @@ reddit_object: Dict[str, str | list]
 def main(POST_ID=None) -> None:
     global reddit_id, reddit_object
     reddit_object = get_subreddit_threads(POST_ID)
+
+    # ── SENTIMENT DETECTION ──────────────────────────────────
+    if settings.config["deepseek"].get("enabled", True):
+        from utils.sentiment import apply_sentiment_config
+        apply_sentiment_config(reddit_object)
+    else:
+        print_substep("Sentiment detection disabled. Using config defaults.", style="yellow")
+    # ─────────────────────────────────────────────────────────
+
     reddit_id = extract_id(reddit_object)
     print_substep(f"Thread ID is {reddit_id}", style="bold blue")
     length, number_of_comments = save_text_to_mp3(reddit_object)

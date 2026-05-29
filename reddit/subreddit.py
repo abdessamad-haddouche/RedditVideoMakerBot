@@ -120,6 +120,7 @@ def get_subreddit_threads(POST_ID: str):
     content["thread_url"] = threadurl
     content["thread_title"] = submission.title
     content["thread_id"] = submission.id
+    content["thread_subreddit"] = submission.subreddit.display_name
     content["is_nsfw"] = submission.over_18
     content["comments"] = []
     if settings.config["settings"]["storymode"]:
