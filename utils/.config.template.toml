@@ -47,7 +47,7 @@ background_thumbnail_font_color = { optional = true, default = "255,255,255", ex
 [settings.tts]
 voice_choice = { optional = false, default = "tiktok", options = ["elevenlabs", "streamlabspolly", "tiktok", "googletranslate", "awspolly", "pyttsx", "OpenAI"], example = "tiktok", explanation = "The voice platform used for TTS generation. " }
 random_voice = { optional = false, type = "bool", default = true, example = true, options = [true, false,], explanation = "Randomizes the voice used for each comment" }
-elevenlabs_voice_name = { optional = false, default = "Sarah - Mature, Reassuring, Confident", example = "Bella", explanation = "The voice used for elevenlabs", options = [] }
+elevenlabs_voice_name = { optional = true, default = "Sarah - Mature, Reassuring, Confident", example = "Bella", explanation = "The voice used for elevenlabs", options = [] }
 elevenlabs_api_key = { optional = true, example = "21f13f91f54d741e2ae27d2ab1b99d59", explanation = "Elevenlabs API key" }
 aws_polly_voice = { optional = false, default = "Matthew", example = "Matthew", explanation = "The voice used for AWS Polly" }
 streamlabs_polly_voice = { optional = false, default = "Matthew", example = "Matthew", explanation = "The voice used for Streamlabs Polly" }
@@ -61,3 +61,7 @@ openai_api_url = { optional = true, default = "https://api.openai.com/v1/", exam
 openai_api_key = { optional = true, example = "sk-abc123def456...", explanation = "Your OpenAI API key for TTS generation" }
 openai_voice_name = { optional = false, default = "alloy", example = "alloy", explanation = "The voice used for OpenAI TTS generation", options = ["alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer", "af_heart"] }
 openai_model = { optional = false, default = "tts-1", example = "tts-1", explanation = "The model variant used for OpenAI TTS generation", options = ["tts-1", "tts-1-hd", "gpt-4o-mini-tts"] }
+
+[deepseek]
+api_key = { optional = true, default = "", explanation = "DeepSeek API key for sentiment detection. Get yours at platform.deepseek.com", example = "sk-xxxxxxxx" }
+enabled = { optional = true, type = "bool", default = true, options = [true, false], explanation = "Enable or disable sentiment-aware video generation", example = true }
