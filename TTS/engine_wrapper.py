@@ -1,3 +1,24 @@
+"""
+engine_wrapper.py
+─────────────────
+Unchanged from original except one targeted change in storymodemethod == 1:
+
+  Before:
+    for idx, text in track(enumerate(self.reddit_object["thread_post"])):
+        self.call_tts(f"postaudio-{idx}", process_text(text))
+
+  After:
+    for idx, item in track(enumerate(self.reddit_object["thread_post"])):
+        text = item.tts if hasattr(item, "tts") else item
+        self.call_tts(f"postaudio-{idx}", process_text(text))
+
+This handles both paths:
+  - EnhancedSentence (feature active)  → uses .tts field (voice cues, clean text)
+  - Plain string (fallback / storymode 0) → used directly as before
+
+Everything else is identical to the original.
+"""
+
 import os
 import re
 from pathlib import Path
@@ -38,7 +59,7 @@ class TTSEngine:
 
     def add_periods(self):
         for comment in self.reddit_object["comments"]:
-            regex_urls = r"((http|https)\:\/\/)?[a-zA-Z0-9\.\/\?\:@\-_=#]+\.([a-zA-Z]){2,6}([a-zA-Z0-9\.\&\/\?\:@\-_=#])*"
+            regex_urls = r"((http|https)://)?[a-zA-Z0-9./?:@\-_=#]+\.([a-zA-Z]){2,6}([a-zA-Z0-9.&/?:@\-_=#])*"
             comment["comment_body"] = re.sub(regex_urls, " ", comment["comment_body"])
             comment["comment_body"] = comment["comment_body"].replace("\n", ". ")
             comment["comment_body"] = re.sub(r"\bAI\b", "A.I", comment["comment_body"])
@@ -64,14 +85,20 @@ class TTSEngine:
                     self.split_post(self.reddit_object["thread_post"], "postaudio")
                 else:
                     self.call_tts("postaudio", process_text(self.reddit_object["thread_post"]))
+
             elif settings.config["settings"]["storymodemethod"] == 1:
-                for idx, text in track(enumerate(self.reddit_object["thread_post"])):
+                # ── CHANGED: handle EnhancedSentence or plain string ─────────
+                # item.tts  → enhanced path (voice cues, DeepSeek rewritten)
+                # plain str → fallback path (unchanged behaviour)
+                for idx, item in track(enumerate(self.reddit_object["thread_post"])):
+                    text = item.tts if hasattr(item, "tts") else item
                     self.call_tts(f"postaudio-{idx}", process_text(text))
                     # ── WhisperX alignment ────────────────────────────────────
                     # Run immediately after each TTS save so word timestamps
                     # are ready when imagemaker() runs later.
                     # Fails silently — never blocks video generation.
                     self._align_audio(f"postaudio-{idx}")
+
         else:
             for idx, comment in track(enumerate(self.reddit_object["comments"]), "Saving..."):
                 if self.length > self.max_length and idx > 1:
@@ -104,12 +131,9 @@ class TTSEngine:
 
     def split_post(self, text: str, idx):
         split_files = []
-        split_text = [
-            x.group().strip()
-            for x in re.finditer(
-                r" *(((.|\n){0," + str(self.tts_module.max_chars) + "})(\.|.$))", text
-            )
-        ]
+        _max   = str(self.tts_module.max_chars)
+        _pat   = r" *(((.|\n){0," + _max + r"})(\.|.$))"
+        split_text = [x.group().strip() for x in re.finditer(_pat, text)]
         self.create_silence_mp3()
 
         for idy, text_cut in enumerate(split_text):
