@@ -371,6 +371,8 @@ def make_final_video(
                     # Fraction-based — compute from audio duration
                     audio_idx     = entry["audio_idx"]
                     time_fraction = entry["time_fraction"]
+                    if audio_idx + 1 >= len(audio_clips_durations):
+                        break
                     audio_dur     = audio_clips_durations[audio_idx + 1]
                     display_dur   = audio_dur * time_fraction
                     offset        = audio_time_used.get(audio_idx, 0.0)
