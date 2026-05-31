@@ -20,6 +20,7 @@ from rich.progress import track
 from utils import settings
 from utils.cleanup import cleanup
 from utils.console import print_step, print_substep
+from utils.ffmpeg_encoder import get_video_codec_args, has_drawtext
 from utils.fonts import getheight
 from utils.id import extract_id
 from utils.thumbnail import create_thumbnail
@@ -91,12 +92,7 @@ def prepare_background(reddit_id: str, W: int, H: int) -> str:
         .output(
             output_path,
             an=None,
-            **{
-                "c:v": "h264_nvenc",
-                "b:v": "20M",
-                "b:a": "192k",
-                "threads": multiprocessing.cpu_count(),
-            },
+            **get_video_codec_args(),
         )
         .overwrite_output()
     )
@@ -310,8 +306,6 @@ def make_final_video(
             )
 
             # ── Build durations ───────────────────────────────────────────────
-            # audio_clips_durations[0]   = title
-            # audio_clips_durations[1+i] = postaudio-{i}
             audio_clips_durations = [
                 float(ffmpeg.probe(f)["format"]["duration"])
                 for f in postaudio_files
@@ -322,7 +316,6 @@ def make_final_video(
             audio_clips_durations.insert(0, title_duration)
 
             # ── Pre-compute absolute start time per audio file ────────────────
-            # audio_start_times[i] = when postaudio-{i} starts in the video
             audio_start_times = []
             t = title_duration
             for dur in audio_clips_durations[1:]:
@@ -351,8 +344,6 @@ def make_final_video(
             )
 
             # ── Overlay each image ────────────────────────────────────────────
-            # Handles both absolute and fraction timing types cleanly.
-            # For fraction: track time_consumed per audio_idx
             audio_time_used = {}
 
             for i, img_file in enumerate(img_files):
@@ -363,12 +354,9 @@ def make_final_video(
                 timing_type = entry.get("timing_type", "fraction")
 
                 if timing_type == "absolute":
-                    # WhisperX aligned — use timestamps directly
                     clip_start = entry["clip_start"]
                     clip_end   = entry["clip_end"]
-
                 else:
-                    # Fraction-based — compute from audio duration
                     audio_idx     = entry["audio_idx"]
                     time_fraction = entry["time_fraction"]
                     if audio_idx + 1 >= len(audio_clips_durations):
@@ -441,13 +429,15 @@ def make_final_video(
             )
             thumbnailSave.save(f"{video_folder}/thumbnail.png")
 
-    background_clip = ffmpeg.drawtext(
-        background_clip,
-        text=f"Background by {background_config['video'][2]}",
-        x="(w-text_w)", y="(h-text_h)",
-        fontsize=5, fontcolor="White",
-        fontfile=os.path.join("fonts", "Roboto-Regular.ttf"),
-    )
+    # ── drawtext watermark — skipped gracefully if filter unavailable ─────────
+    if has_drawtext():
+        background_clip = ffmpeg.drawtext(
+            background_clip,
+            text=f"Background by {background_config['video'][2]}",
+            x="(w-text_w)", y="(h-text_h)",
+            fontsize=5, fontcolor="White",
+            fontfile=os.path.join("fonts", "Roboto-Regular.ttf"),
+        )
     background_clip = background_clip.filter("scale", W, H)
 
     print_step("Rendering the video 🎥")
@@ -465,12 +455,7 @@ def make_final_video(
             ffmpeg.output(
                 background_clip, final_audio, path,
                 f="mp4",
-                **{
-                    "c:v": "h264_nvenc",
-                    "b:v": "20M",
-                    "b:a": "192k",
-                    "threads": multiprocessing.cpu_count(),
-                },
+                **get_video_codec_args(),
             ).overwrite_output().global_args("-progress", progress.output_file.name).run(
                 quiet=True, overwrite_output=True,
                 capture_stdout=False, capture_stderr=False,
@@ -490,12 +475,7 @@ def make_final_video(
                 ffmpeg.output(
                     background_clip, audio, path,
                     f="mp4",
-                    **{
-                        "c:v": "h264_nvenc",
-                        "b:v": "20M",
-                        "b:a": "192k",
-                        "threads": multiprocessing.cpu_count(),
-                    },
+                    **get_video_codec_args(),
                 ).overwrite_output().global_args("-progress", progress.output_file.name).run(
                     quiet=True, overwrite_output=True,
                     capture_stdout=False, capture_stderr=False,
