@@ -196,12 +196,16 @@ def apply_sentiment_config(reddit_object: dict) -> None:
 
     sentiment = detect_sentiment(reddit_object)
 
-    # ── Background ───────────────────────────────────────────
+    # ── Sentiment label — stored in memory so imagenarator.py can read it ────
+    # This is the key that STYLE_MAP lookups depend on at render time.
+    settings.config["settings"]["sentiment"] = sentiment
+
+    # ── Background ───────────────────────────────────────────────────────────
     bg_video, bg_audio = BACKGROUND_MAP[sentiment]
     settings.config["settings"]["background"]["background_video"] = bg_video
     settings.config["settings"]["background"]["background_audio"] = bg_audio
 
-    # ── Voice ────────────────────────────────────────────────
+    # ── Voice ────────────────────────────────────────────────────────────────
     voice_choice = settings.config["settings"]["tts"]["voice_choice"].lower()
 
     if voice_choice == "elevenlabs":
@@ -213,12 +217,12 @@ def apply_sentiment_config(reddit_object: dict) -> None:
     else:
         voice = f"(voice override not supported for {voice_choice})"
 
-    # ── Metadata ─────────────────────────────────────────────
+    # ── Metadata ─────────────────────────────────────────────────────────────
     print_substep("Generating titles, captions and hashtags... ✍️", style="bold blue")
     metadata = generate_metadata(reddit_object, sentiment)
     save_metadata(metadata, reddit_object)
 
-    # ── Log ──────────────────────────────────────────────────
+    # ── Log ──────────────────────────────────────────────────────────────────
     print_substep(f"Sentiment detected  : {sentiment} 🎯", style="bold green")
     print_substep(f"Background video    : {bg_video}", style="bold blue")
     print_substep(f"Background audio    : {bg_audio if bg_audio else 'none'}", style="bold blue")

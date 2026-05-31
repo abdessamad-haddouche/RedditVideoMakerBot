@@ -62,10 +62,10 @@ def get_screenshots_of_reddit_posts(reddit_object: dict, screenshot_num: int):
     if storymode and settings.config["settings"]["storymodemethod"] == 1:
         print_substep("Generating images...")
         return imagemaker(
-            theme=bgcolor,
+            theme=(0, 0, 0, 0),
             reddit_obj=reddit_object,
-            txtclr=txtcolor,
-            transparent=transparent,
+            txtclr=(255, 255, 255),
+            transparent=True,
         )
 
     screenshot_num: int

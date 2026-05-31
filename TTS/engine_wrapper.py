@@ -14,23 +14,11 @@ from utils import settings
 from utils.console import print_step, print_substep
 from utils.voice import sanitize_text
 
-DEFAULT_MAX_LENGTH: int = (
-    50  # Video length variable, edit this on your own risk. It should work, but it's not supported
-)
+DEFAULT_MAX_LENGTH: int = 50
 
 
 class TTSEngine:
-    """Calls the given TTS engine to reduce code duplication and allow multiple TTS engines.
-
-    Args:
-        tts_module            : The TTS module. Your module should handle the TTS itself and saving to the given path under the run method.
-        reddit_object         : The reddit object that contains the posts to read.
-        path (Optional)       : The unix style path to save the mp3 files to. This must not have leading or trailing slashes.
-        max_length (Optional) : The maximum length of the mp3 files in total.
-
-    Notes:
-        tts_module must take the arguments text and filepath.
-    """
+    """Calls the given TTS engine to reduce code duplication and allow multiple TTS engines."""
 
     def __init__(
         self,
@@ -42,18 +30,14 @@ class TTSEngine:
     ):
         self.tts_module = tts_module()
         self.reddit_object = reddit_object
-
         self.redditid = re.sub(r"[^\w\s-]", "", reddit_object["thread_id"])
         self.path = path + self.redditid + "/mp3"
         self.max_length = max_length
         self.length = 0
         self.last_clip_length = last_clip_length
 
-    def add_periods(
-        self,
-    ):  # adds periods to the end of paragraphs (where people often forget to put them) so tts doesn't blend sentences
+    def add_periods(self):
         for comment in self.reddit_object["comments"]:
-            # remove links
             regex_urls = r"((http|https)\:\/\/)?[a-zA-Z0-9\.\/\?\:@\-_=#]+\.([a-zA-Z]){2,6}([a-zA-Z0-9\.\&\/\?\:@\-_=#])*"
             comment["comment_body"] = re.sub(regex_urls, " ", comment["comment_body"])
             comment["comment_body"] = comment["comment_body"].replace("\n", ". ")
@@ -72,7 +56,6 @@ class TTSEngine:
 
         self.add_periods()
         self.call_tts("title", process_text(self.reddit_object["thread_title"]))
-        # processed_text = ##self.reddit_object["thread_post"] != ""
         idx = 0
 
         if settings.config["settings"]["storymode"]:
@@ -84,23 +67,40 @@ class TTSEngine:
             elif settings.config["settings"]["storymodemethod"] == 1:
                 for idx, text in track(enumerate(self.reddit_object["thread_post"])):
                     self.call_tts(f"postaudio-{idx}", process_text(text))
-
+                    # ── WhisperX alignment ────────────────────────────────────
+                    # Run immediately after each TTS save so word timestamps
+                    # are ready when imagemaker() runs later.
+                    # Fails silently — never blocks video generation.
+                    self._align_audio(f"postaudio-{idx}")
         else:
             for idx, comment in track(enumerate(self.reddit_object["comments"]), "Saving..."):
-                # ! Stop creating mp3 files if the length is greater than max length.
                 if self.length > self.max_length and idx > 1:
                     self.length -= self.last_clip_length
                     idx -= 1
                     break
-                if (
-                    len(comment["comment_body"]) > self.tts_module.max_chars
-                ):  # Split the comment if it is too long
-                    self.split_post(comment["comment_body"], idx)  # Split the comment
-                else:  # If the comment is not too long, just call the tts engine
+                if len(comment["comment_body"]) > self.tts_module.max_chars:
+                    self.split_post(comment["comment_body"], idx)
+                else:
                     self.call_tts(f"{idx}", process_text(comment["comment_body"]))
 
         print_substep("Saved Text to MP3 files successfully.", style="bold green")
         return self.length, idx
+
+    def _align_audio(self, filename: str) -> None:
+        """
+        Run WhisperX on a saved audio file to produce word-level timestamps.
+        Called immediately after each postaudio-{i}.mp3 is saved.
+        Fails silently — system falls back to time_fraction mode if unavailable.
+        """
+        try:
+            from utils.whisper_aligner import align_and_save
+            audio_path = f"{self.path}/{filename}.mp3"
+            lang = settings.config["reddit"]["thread"].get("post_lang", "en") or "en"
+            result = align_and_save(audio_path, language=lang)
+            if result:
+                print_substep(f"Word timestamps saved → {result}", style="dim")
+        except Exception:
+            pass  # Never crash on alignment failure
 
     def split_post(self, text: str, idx):
         split_files = []
@@ -114,8 +114,6 @@ class TTSEngine:
 
         for idy, text_cut in enumerate(split_text):
             newtext = process_text(text_cut)
-            # print(f"{idx}-{idy}: {newtext}\n")
-
             if not newtext or newtext.isspace():
                 print("newtext was blank because sanitized split text resulted in none")
                 continue
@@ -144,7 +142,6 @@ class TTSEngine:
 
     def call_tts(self, filename: str, text: str):
         if settings.config["settings"]["tts"]["voice_choice"] == "googletranslate":
-            # GTTS does not have the argument 'random_voice'
             self.tts_module.run(
                 text,
                 filepath=f"{self.path}/{filename}.mp3",
@@ -155,10 +152,6 @@ class TTSEngine:
                 filepath=f"{self.path}/{filename}.mp3",
                 random_voice=settings.config["settings"]["tts"]["random_voice"],
             )
-        # try:
-        #     self.length += MP3(f"{self.path}/{filename}.mp3").info.length
-        # except (MutagenError, HeaderNotFoundError):
-        #     self.length += sox.file_info.duration(f"{self.path}/{filename}.mp3")
         try:
             clip = AudioFileClip(f"{self.path}/{filename}.mp3")
             self.last_clip_length = clip.duration
