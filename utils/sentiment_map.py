@@ -349,3 +349,44 @@ SLOW_DURATION_MULT = {
     "funny":      1.0,
     "happy":      1.1,
 }
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# NEW — Qwen3-TTS voice maps (feature/qwen3-tts-local)
+# ─────────────────────────────────────────────────────────────────────────────
+ 
+# Named speaker per sentiment — maps to Qwen3-TTS built-in speakers
+# English speakers: Ryan (warm, grounded), Aiden (energetic, crisp)
+# For best results: Ryan for drama/sad/wholesome, Aiden for scary/angry/funny
+QWEN_VOICE_MAP = {
+    "sad":        "Ryan",    # warm, grounded — carries grief well
+    "happy":      "Aiden",   # brighter energy
+    "angry":      "Aiden",   # more edge and punch
+    "mysterious": "Ryan",    # deeper, more measured
+    "funny":      "Aiden",   # faster delivery, lighter
+    "dramatic":   "Ryan",    # authoritative storyteller
+    "wholesome":  "Ryan",    # warm and reassuring
+    "scary":      "Aiden",   # tenser, more breathless
+}
+ 
+# Full list of available speakers for random_voice=True
+# Only English speakers by default — extend if you need multilingual
+QWEN_SPEAKERS = [
+    "Ryan",
+    "Aiden",
+]
+ 
+# Voice design prompts per sentiment — used when voice_design=true in config
+# These are fed directly to Qwen3-TTS as natural language voice instructions
+# Override these in config.toml via [qwen_tts] voice_prompt for a custom prompt
+QWEN_VOICE_DESIGN_MAP = {
+    "sad":        "A warm, soft male narrator with a slight catch in his voice, speaking slowly and thoughtfully",
+    "happy":      "An upbeat, enthusiastic narrator with a smile in his voice, speaking at a lively pace",
+    "angry":      "A tense, controlled male voice with barely contained frustration, clipped and deliberate",
+    "mysterious": "A low, measured narrator with a hint of intrigue, speaking just slightly below normal pace",
+    "funny":      "A friendly, energetic narrator with natural comedic timing and a light touch",
+    "dramatic":   "A deep, authoritative male narrator with gravitas and emotional range, like a documentary voice",
+    "wholesome":  "A gentle, kind male narrator who sounds like he genuinely cares about the story",
+    "scary":      "A tense, quietly intense narrator with controlled dread in his voice, deliberate pacing",
+}
+ 

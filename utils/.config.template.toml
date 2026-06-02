@@ -45,7 +45,7 @@ background_thumbnail_font_size = { optional = true, type = "int", default = 96, 
 background_thumbnail_font_color = { optional = true, default = "255,255,255", example = "255,255,255", explanation = "Font color in RGB format for the thumbnail text" }
 
 [settings.tts]
-voice_choice = { optional = false, default = "tiktok", options = ["elevenlabs", "streamlabspolly", "tiktok", "googletranslate", "awspolly", "pyttsx", "OpenAI"], example = "tiktok", explanation = "The voice platform used for TTS generation. " }
+voice_choice = { optional = false, default = "tiktok", options = ["elevenlabs", "streamlabspolly", "tiktok", "googletranslate", "awspolly", "pyttsx", "OpenAI", "qwen"], example = "tiktok", explanation = "The voice platform used for TTS generation. " }
 random_voice = { optional = false, type = "bool", default = true, example = true, options = [true, false,], explanation = "Randomizes the voice used for each comment" }
 elevenlabs_voice_name = { optional = true, default = "Sarah - Mature, Reassuring, Confident", example = "Bella", explanation = "The voice used for elevenlabs" }
 elevenlabs_api_key = { optional = true, example = "21f13f91f54d741e2ae27d2ab1b99d59", explanation = "Elevenlabs API key" }
@@ -65,3 +65,12 @@ openai_model = { optional = false, default = "tts-1", example = "tts-1", explana
 [deepseek]
 api_key = { optional = true, default = "", explanation = "DeepSeek API key for sentiment detection. Get yours at platform.deepseek.com", example = "sk-xxxxxxxx" }
 enabled = { optional = true, type = "bool", default = true, options = [true, false], explanation = "Enable or disable sentiment-aware video generation", example = true }
+
+[qwen_tts]
+model = { optional = true, default = "mlx-community/Qwen3-TTS-12Hz-0.6B-Base-4bit", example = "Qwen/Qwen3-TTS-12Hz-1.7B-Base", explanation = "Qwen3-TTS model ID" }
+device = { optional = true, default = "mps", example = "cuda", explanation = "Device: mps (Mac) | cuda (Linux GPU) | cpu (Linux no GPU)" }
+voice_name = { optional = true, default = "Ethan", example = "Ethan", explanation = "Named speaker. Ignored when reference_audio is set." }
+voice_design = { optional = true, type = "bool", default = false, options = [true, false], explanation = "Use voice_prompt instead of voice_name" }
+voice_prompt = { optional = true, default = "", example = "A deep dramatic narrator", explanation = "Natural language voice description. Used when voice_design=true." }
+reference_audio = { optional = true, default = "", example = "m-voice.mp3", explanation = "Path to reference audio for voice cloning. Overrides voice_name." }
+cooldown_seconds = { optional = true, type = "float", default = 0.2, example = 0.2, explanation = "Pause between sentences for thermal management." }

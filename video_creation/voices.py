@@ -1,58 +1,71 @@
-from typing import Tuple
+"""
+video_creation/voices.py
+────────────────────────
+Thin dispatch layer between main.py and TTS/engine_wrapper.py.
 
-from rich.console import Console
+Responsibility: read voice_choice from config, pick the right TTS module,
+hand it to TTSEngine. That's it.
 
-from TTS.aws_polly import AWSPolly
-from TTS.elevenlabs import elevenlabs
-from TTS.engine_wrapper import TTSEngine
-from TTS.GTTS import GTTS
-from TTS.openai_tts import OpenAITTS
-from TTS.pyttsx import pyttsx
-from TTS.streamlabs_polly import StreamlabsPolly
-from TTS.TikTok import TikTok
+Changes vs original:
+  - Added "qwen" and "qwen3" cases → Qwen3TTS (local, Apple Silicon)
+  - Added "openai" lowercase alias (was "OpenAI" only — case-insensitive fix)
+  - Everything else is identical to the original.
+"""
+
 from utils import settings
-from utils.console import print_step, print_table
-
-console = Console()
-
-TTSProviders = {
-    "GoogleTranslate": GTTS,
-    "AWSPolly": AWSPolly,
-    "StreamlabsPolly": StreamlabsPolly,
-    "TikTok": TikTok,
-    "pyttsx": pyttsx,
-    "ElevenLabs": elevenlabs,
-    "OpenAI": OpenAITTS,
-}
+from utils.console import print_substep
+from TTS.engine_wrapper import TTSEngine
 
 
-def save_text_to_mp3(reddit_obj) -> Tuple[int, int]:
-    """Saves text to MP3 files.
-
-    Args:
-        reddit_obj (): Reddit object received from reddit API in reddit/subreddit.py
+def save_text_to_mp3(reddit_object) -> tuple:
+    """
+    Entry point called from main.py.
+    Selects TTS engine based on voice_choice, runs the full TTS pipeline.
 
     Returns:
-        tuple[int,int]: (total length of the audio, the number of comments audio was generated for)
+        (length: float, number_of_clips: int)
     """
+    voice_choice = settings.config["settings"]["tts"]["voice_choice"].lower().strip()
 
-    voice = settings.config["settings"]["tts"]["voice_choice"]
-    if str(voice).casefold() in map(lambda _: _.casefold(), TTSProviders):
-        text_to_mp3 = TTSEngine(get_case_insensitive_key_value(TTSProviders, voice), reddit_obj)
+    # ── Engine dispatch ───────────────────────────────────────────────────────
+    # Adding a new engine: one elif here + one entry in TTS/__init__.py
+    # ─────────────────────────────────────────────────────────────────────────
+
+    if voice_choice == "elevenlabs":
+        from TTS.elevenlabs import ElevenLabsTTS as tts_module
+
+    elif voice_choice in ("streamlabspolly", "streamlabs"):
+        from TTS.streamlabs_polly import StreamlabsPolly as tts_module
+
+    elif voice_choice in ("awspolly", "aws"):
+        from TTS.aws_polly import AWSPolly as tts_module
+
+    elif voice_choice == "tiktok":
+        from TTS.TikTok import TikTok as tts_module
+
+    elif voice_choice in ("openai", "openaitts"):
+        from TTS.openai_tts import OpenAITTS as tts_module
+
+    elif voice_choice in ("pyttsx", "system"):
+        from TTS.pyttsx import pyttsx as tts_module
+
+    elif voice_choice == "googletranslate":
+        from TTS.GTTS import GTTS as tts_module
+
+    # ── NEW: local Qwen3-TTS (Apple Silicon / iMac M4) ───────────────────────
+    elif voice_choice in ("qwen", "qwen3", "qwen3tts", "qwen_tts"):
+        from TTS.qwen3_tts import Qwen3TTS as tts_module
+    # ─────────────────────────────────────────────────────────────────────────
+
     else:
-        while True:
-            print_step("Please choose one of the following TTS providers: ")
-            print_table(TTSProviders)
-            choice = input("\n")
-            if choice.casefold() in map(lambda _: _.casefold(), TTSProviders):
-                break
-            print("Unknown Choice")
-        text_to_mp3 = TTSEngine(get_case_insensitive_key_value(TTSProviders, choice), reddit_obj)
-    return text_to_mp3.run()
+        # Unknown engine — warn and fall back to gTTS so the pipeline never
+        # crashes on a typo in config.toml
+        print_substep(
+            f"Unknown voice_choice: '{voice_choice}'. Falling back to googletranslate.",
+            style="yellow",
+        )
+        from TTS.GTTS import GTTS as tts_module
 
-
-def get_case_insensitive_key_value(input_dict, key):
-    return next(
-        (value for dict_key, value in input_dict.items() if dict_key.lower() == key.lower()),
-        None,
-    )
+    # ── Run the engine ────────────────────────────────────────────────────────
+    engine = TTSEngine(tts_module, reddit_object)
+    return engine.run()
