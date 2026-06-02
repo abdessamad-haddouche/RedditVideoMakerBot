@@ -10,7 +10,7 @@ from prawcore import ResponseException
 
 from reddit.subreddit import get_subreddit_threads
 from utils import settings
-from utils.cleanup import cleanup
+from utils.cleanup import cleanup, cleanup_temp
 from utils.console import print_markdown, print_step, print_substep
 from utils.ffmpeg_install import ffmpeg_install
 from utils.id import extract_id
@@ -48,6 +48,7 @@ reddit_object: Dict[str, str | list]
 
 def main(POST_ID=None) -> None:
     global reddit_id, reddit_object
+    cleanup_temp() 
     reddit_object = get_subreddit_threads(POST_ID)
 
     # ── SENTIMENT DETECTION ──────────────────────────────────

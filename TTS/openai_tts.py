@@ -1,91 +1,208 @@
+"""
+openai_tts.py
+─────────────
+OpenAI TTS engine for RedditVideoMakerBot.
+
+Uses OpenAI's /v1/audio/speech endpoint (tts-1 or gpt-4o-mini-tts).
+Same interface as every other TTS module:
+    tts = OpenAITTS()
+    tts.run(text, filepath="path/to/output.mp3")
+
+Changes from original:
+  - Strips [instruction] prefixes written by DeepSeek before sending to API
+    (OpenAI would read "[speak slowly]" literally otherwise)
+  - Graceful failure: warns instead of raising in __init__ if no API key
+  - Silent fallback to gTTS if API call fails (never crashes pipeline)
+  - Reads voice from OPENAI_VOICE_MAP per sentiment if no override in config
+"""
+
+import re
 import random
 
 import requests
 
 from utils import settings
+from utils.console import print_substep
 
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Instruction prefix stripper
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _strip_instruction(text: str) -> str:
+    """
+    Strips [instruction] prefix written by DeepSeek for voice delivery.
+
+    DeepSeek writes these when voice_choice = "openai":
+        "[speak slowly, emphasize STOPPED] I opened the door..."
+        "[with dread] Something was wrong."
+
+    OpenAI TTS does NOT parse these — it would read the brackets literally.
+    The delivery cues (... CAPS ?!) in the rest of the sentence ARE read
+    correctly by OpenAI, so we only strip the bracketed prefix.
+
+    Examples:
+        "[speak slowly] I opened the door..." → "I opened the door..."
+        "I opened the door..."               → "I opened the door..."  (unchanged)
+    """
+    return re.sub(r'^\[[^\]]+\]\s*', '', text).strip()
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# OpenAI TTS engine
+# ─────────────────────────────────────────────────────────────────────────────
 
 class OpenAITTS:
     """
-    A Text-to-Speech engine that uses an OpenAI-like TTS API endpoint to generate audio from text.
+    OpenAI TTS engine. Same interface as GTTS, QwenTTS, elevenlabs:
+        tts = OpenAITTS()
+        tts.run(text, filepath="assets/temp/.../mp3/postaudio-0.mp3")
 
-    Attributes:
-        max_chars (int): Maximum number of characters allowed per API call.
-        api_key (str): API key loaded from settings.
-        api_url (str): The complete API endpoint URL, built from a base URL provided in the config.
-        available_voices (list): Static list of supported voices (according to current docs).
+    Config keys read from settings.config["settings"]["tts"]:
+        openai_api_key   : your OpenAI API key (required)
+        openai_api_url   : base URL, default "https://api.openai.com/v1/"
+        openai_model     : "tts-1" (recommended) or "tts-1-hd" or "gpt-4o-mini-tts"
+        openai_voice_name: voice name — overridden per sentiment by OPENAI_VOICE_MAP
+        random_voice     : if True, picks a random voice per sentence
+
+    Voice selection priority:
+        1. random_voice=True → random from available_voices
+        2. OPENAI_VOICE_MAP[current_sentiment] → best voice for the mood
+        3. openai_voice_name from config → manual override
+        4. "onyx" → hardcoded fallback (best for storytelling)
     """
 
+    max_chars: int = 4096  # OpenAI limit per API call
+
     def __init__(self):
-        # Set maximum input size based on API limits (4096 characters per request)
-        self.max_chars = 4096
-        self.api_key = settings.config["settings"]["tts"].get("openai_api_key")
+        self.api_key = settings.config["settings"]["tts"].get("openai_api_key", "").strip()
+
         if not self.api_key:
-            raise ValueError(
-                "No OpenAI API key provided in settings! Please set 'openai_api_key' in your config."
+            print_substep(
+                "No OpenAI API key found in config. "
+                "Set openai_api_key in [settings.tts]. "
+                "Will fall back to gTTS.",
+                style="yellow",
             )
 
-        # Read the base URL from the configuration (e.g., "https://api.openai.com/v1" or "https://api.openai.com/v1/")
+        # Build full endpoint URL
         base_url = settings.config["settings"]["tts"].get(
-            "openai_api_url", "https://api.openai.com/v1"
-        )
-        # Remove trailing slash if present
-        if base_url.endswith("/"):
-            base_url = base_url[:-1]
-        # Append the TTS-specific path
-        self.api_url = base_url + "/audio/speech"
+            "openai_api_url", "https://api.openai.com/v1/"
+        ).rstrip("/")
+        self.api_url = f"{base_url}/audio/speech"
 
-        # Set the available voices to a static list as per OpenAI TTS documentation.
-        self.available_voices = self.get_available_voices()
+        self.available_voices = [
+            "alloy", "ash", "coral", "echo",
+            "fable", "onyx", "nova", "sage", "shimmer",
+        ]
 
-    def get_available_voices(self):
-        """
-        Return a static list of supported voices for the OpenAI TTS API.
-
-        According to the documentation, supported voices include:
-            "alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"
-        """
-        return ["alloy", "ash", "coral", "echo", "fable", "onyx", "nova", "sage", "shimmer"]
-
-    def randomvoice(self):
-        """
-        Select and return a random voice from the available voices.
-        """
+    def randomvoice(self) -> str:
         return random.choice(self.available_voices)
 
-    def run(self, text, filepath, random_voice: bool = False):
+    def _get_voice(self, random_voice: bool) -> str:
         """
-        Convert the provided text to speech and save the resulting audio to the specified filepath.
-
-        Args:
-            text (str): The input text to convert.
-            filepath (str): The file path where the generated audio will be saved.
-            random_voice (bool): If True, select a random voice from the available voices.
+        Resolve which voice to use for this sentence.
+        Priority: random → sentiment map → config → fallback.
         """
-        # Choose voice based on configuration or randomly if requested.
         if random_voice:
-            voice = self.randomvoice()
-        else:
-            voice = settings.config["settings"]["tts"].get("openai_voice_name", "alloy")
-            voice = str(voice).lower()  # Ensure lower-case as expected by the API
+            return self.randomvoice()
 
-        # Select the model from configuration; default to 'tts-1'
-        model = settings.config["settings"]["tts"].get("openai_model", "tts-1")
-
-        # Create payload for API request
-        payload = {
-            "model": model,
-            "voice": voice,
-            "input": text,
-            "response_format": "mp3",  # allowed formats: "mp3", "aac", "opus", "flac", "pcm" or "wav"
-        }
-        headers = {"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"}
+        # Sentiment-aware voice — best voice for the current story mood
         try:
-            response = requests.post(self.api_url, headers=headers, json=payload)
-            if response.status_code != 200:
-                raise RuntimeError(f"Error from TTS API: {response.status_code} {response.text}")
-            # Write response as binary into file.
-            with open(filepath, "wb") as f:
-                f.write(response.content)
+            from utils.sentiment_map import OPENAI_VOICE_MAP
+            sentiment = settings.config["settings"].get("sentiment", "dramatic")
+            if sentiment in OPENAI_VOICE_MAP:
+                return OPENAI_VOICE_MAP[sentiment]
+        except Exception:
+            pass
+
+        # Manual config override
+        voice = settings.config["settings"]["tts"].get("openai_voice_name", "").strip().lower()
+        if voice and voice in self.available_voices:
+            return voice
+
+        # Hardcoded fallback — onyx is the best storytelling voice
+        return "onyx"
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Public interface — called by engine_wrapper.py
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def run(self, text: str, filepath: str, random_voice: bool = False) -> None:
+        """
+        Synthesize text → MP3 at filepath.
+        Strips [instruction] prefix before sending to API.
+        Falls back to gTTS silently on any failure.
+        Never raises. Never crashes the pipeline.
+        """
+        if not text or not text.strip():
+            return
+
+        if not self.api_key:
+            self._fallback_gtts(text, filepath)
+            return
+
+        # Strip DeepSeek delivery instruction prefix
+        # The punctuation cues (..., CAPS, ?!) in the rest of the text
+        # are kept — OpenAI reads them naturally for emphasis
+        clean_text = _strip_instruction(text)
+        if not clean_text:
+            return
+
+        try:
+            self._call_api(clean_text, filepath, random_voice)
         except Exception as e:
-            raise RuntimeError(f"Failed to generate audio with OpenAI TTS API: {str(e)}")
+            print_substep(
+                f"OpenAI TTS failed: {e}. Falling back to gTTS.",
+                style="yellow",
+            )
+            self._fallback_gtts(text, filepath)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # API call
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _call_api(self, text: str, filepath: str, random_voice: bool) -> None:
+        """Makes the OpenAI /v1/audio/speech API call and saves the MP3."""
+        voice   = self._get_voice(random_voice)
+        model   = settings.config["settings"]["tts"].get("openai_model", "tts-1")
+
+        payload = {
+            "model":           model,
+            "voice":           voice,
+            "input":           text,
+            "response_format": "mp3",
+        }
+        headers = {
+            "Authorization": f"Bearer {self.api_key}",
+            "Content-Type":  "application/json",
+        }
+
+        response = requests.post(self.api_url, headers=headers, json=payload, timeout=30)
+
+        if response.status_code != 200:
+            raise RuntimeError(
+                f"OpenAI API error {response.status_code}: {response.text[:200]}"
+            )
+
+        with open(filepath, "wb") as f:
+            f.write(response.content)
+
+    # ─────────────────────────────────────────────────────────────────────────
+    # Fallback
+    # ─────────────────────────────────────────────────────────────────────────
+
+    def _fallback_gtts(self, text: str, filepath: str) -> None:
+        """
+        gTTS fallback. Strips [instruction] prefix before speaking.
+        Never raises.
+        """
+        try:
+            from gtts import gTTS
+            clean = _strip_instruction(text)
+            if not clean:
+                return
+            gTTS(text=clean, lang="en", slow=False).save(filepath)
+            print_substep(f"gTTS fallback used for: {clean[:60]}", style="dim")
+        except Exception as e:
+            print_substep(f"gTTS fallback also failed: {e}", style="red")
